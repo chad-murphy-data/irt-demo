@@ -85,7 +85,7 @@ function resize() {
   var usable = H * 0.88;
   GAP    = Math.max(1, Math.floor(usable / 30 * 0.18));
   PILL_H = Math.floor((usable - GAP * 29) / 30);
-  PILL_W = Math.min(72, Math.floor(W * 0.18));
+  PILL_W = Math.min(96, Math.floor(W * 0.22));
 }
 
 function easeInOut(t) { return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2; }
@@ -113,7 +113,7 @@ var tasks = [];
 for (var i = 0; i < N; i++) {
   tasks.push({
     rank:  i+1,
-    label: 'T' + (i+1 < 10 ? '0'+(i+1) : ''+(i+1)),
+    label: 'Task ' + (i+1),
     theta: parseFloat((-2.0 + i*(5.0/29)).toFixed(2)),
     t:     i/(N-1)
   });
@@ -213,20 +213,18 @@ function pillPath(x,y,w,h) {
 function drawPill(x,y,w,h,fill,alpha,label,thetaVal,showTheta) {
   ctx.save();
   ctx.globalAlpha=alpha;
-  ctx.shadowColor='rgba(0,0,0,0.4)'; ctx.shadowBlur=4; ctx.shadowOffsetY=2;
   pillPath(x,y,w,h);
   ctx.fillStyle=fill; ctx.fill();
-  ctx.shadowColor='transparent'; ctx.shadowBlur=0;
   var br=brightness(fill);
-  ctx.fillStyle=br>100?'rgba(4,64,20,0.65)':'rgba(255,255,255,0.75)';
+  ctx.fillStyle=br>100?'rgba(4,64,20,0.85)':'rgba(255,255,255,0.9)';
   ctx.textAlign='center'; ctx.textBaseline='middle';
-  var fs=Math.max(8,Math.floor(PILL_H*0.58));
-  ctx.font=fs+'px "IBM Plex Mono"';
+  var fs=Math.max(8,Math.floor(PILL_H*0.55));
+  ctx.font='bold '+fs+'px "IBM Plex Mono"';
   if(showTheta){
-    ctx.fillText(label,x-17,y);
-    ctx.globalAlpha=alpha*0.5;
+    ctx.fillText(label,x-20,y);
+    ctx.globalAlpha=alpha*0.55;
     ctx.font=Math.max(6,fs-1)+'px "IBM Plex Mono"';
-    ctx.fillText('th '+thetaVal.toFixed(2),x+17,y);
+    ctx.fillText('th '+thetaVal.toFixed(2),x+24,y);
   } else {
     ctx.fillText(label,x,y);
   }
@@ -272,10 +270,10 @@ function drawAxis(ax,topY,botY,alpha,growProg) {
       ctx.font='bold 10px "IBM Plex Mono"'; ctx.textAlign='right'; ctx.textBaseline='middle';
       ctx.fillText(v===0?'0':(v>0?'+'+v:''+v),ax-9,ty);
     }
-    ctx.globalAlpha=alpha*0.8; ctx.fillStyle='#9adba6';
-    ctx.font='bold 11px "IBM Plex Mono"'; ctx.textAlign='center';
-    ctx.fillText('Hard',ax,topY-12);
-    ctx.fillText('Easy',ax,botY+14);
+    ctx.globalAlpha=alpha; ctx.fillStyle='#c8f0ce';
+    ctx.font='bold 14px "IBM Plex Mono"'; ctx.textAlign='center';
+    ctx.fillText('Hard',ax,topY-14);
+    ctx.fillText('Easy',ax,botY+16);
   }
   ctx.restore();
 }
@@ -283,7 +281,7 @@ function drawAxis(ax,topY,botY,alpha,growProg) {
 function drawPersonDot(x,y,alpha,person,showX,xAlpha) {
   ctx.save();
   ctx.globalAlpha=alpha;
-  ctx.shadowColor=person.color; ctx.shadowBlur=12;
+  ctx.shadowColor=person.color; ctx.shadowBlur=6;
   ctx.beginPath();
   ctx.moveTo(x,y-7); ctx.lineTo(x+6,y); ctx.lineTo(x,y+7); ctx.lineTo(x-6,y);
   ctx.closePath();
@@ -294,7 +292,7 @@ function drawPersonDot(x,y,alpha,person,showX,xAlpha) {
     ctx.save();
     ctx.globalAlpha=alpha*xAlpha;
     ctx.strokeStyle='#ff4444'; ctx.lineWidth=2.5; ctx.lineCap='round';
-    ctx.shadowColor='#ff2222'; ctx.shadowBlur=8;
+    ctx.shadowColor='transparent'; ctx.shadowBlur=0;
     var s=8;
     ctx.beginPath(); ctx.moveTo(x-s,y-s); ctx.lineTo(x+s,y+s); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(x+s,y-s); ctx.lineTo(x-s,y+s); ctx.stroke();
@@ -424,8 +422,8 @@ function drawSpotlight(tgts, personY, person, zoneAlpha, dimOthers, activeMkIdx,
     ctx.font         = 'bold 13px "IBM Plex Mono"';
     ctx.textAlign    = 'right';
     ctx.textBaseline = 'middle';
-    ctx.shadowColor  = 'rgba(240,80,80,0.4)';
-    ctx.shadowBlur   = 6;
+    ctx.shadowColor  = 'transparent';
+    ctx.shadowBlur   = 0;
     ctx.fillText('Needs Help', arrowX - 10, midArrow);
     ctx.restore();
   }
@@ -457,8 +455,8 @@ function drawSpotlight(tgts, personY, person, zoneAlpha, dimOthers, activeMkIdx,
     ctx.font         = 'bold 13px "IBM Plex Mono"';
     ctx.textAlign    = 'right';
     ctx.textBaseline = 'middle';
-    ctx.shadowColor  = 'rgba(80,220,100,0.4)';
-    ctx.shadowBlur   = 6;
+    ctx.shadowColor  = 'transparent';
+    ctx.shadowBlur   = 0;
     ctx.fillText('Mastered', arrowX - 10, midArrow);
     ctx.restore();
   }
