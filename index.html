@@ -79,8 +79,11 @@ var PILL_H, PILL_W, GAP;
 
 function resize() {
   var r = stage.getBoundingClientRect();
-  W = canvas.width  = r.width;
-  H = canvas.height = r.height;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width  = r.width  * dpr;
+  canvas.height = r.height * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  W = r.width; H = r.height;
   CX = W / 2; CY = H / 2;
   var usable = H * 0.88;
   GAP    = Math.max(1, Math.floor(usable / 30 * 0.18));
