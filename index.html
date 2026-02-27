@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IRT — Tasks and People on a Shared Scale</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root { --bg: #060d07; --accent: #6abf7a; --dim: #3a5c40; }
+body {
+  background: var(--bg);
+  font-family: 'IBM Plex Mono', monospace;
+  width: 100vw; height: 100vh;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+}
+h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(1.1rem, 2.5vw, 1.8rem);
+  font-weight: 700; color: var(--accent);
+  letter-spacing: 0.04em; margin-bottom: 4px;
+  text-align: center;
+  opacity: 0; animation: fadeUp 0.8s ease forwards 0.2s;
+}
+.sub {
+  font-size: 0.65rem; color: var(--accent);
+  font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+  text-align: center; margin-bottom: 0;
+  opacity: 0; animation: fadeUp 0.8s ease forwards 0.4s;
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+#stage { position: relative; flex: 1; width: 100%; max-width: 960px; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.foot {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 8px; padding-bottom: 20px;
+}
+#lbl {
+  font-size: 0.65rem; letter-spacing: 0.18em; font-weight: 700;
+  text-transform: uppercase; color: var(--accent);
+  height: 15px; text-align: center;
+}
+#rbtn {
+  background: transparent; border: 1px solid var(--dim);
+  color: var(--dim); font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.55rem; letter-spacing: 0.15em; text-transform: uppercase;
+  padding: 6px 16px; cursor: pointer; border-radius: 2px;
+  transition: border-color 0.2s, color 0.2s;
+  opacity: 0; pointer-events: none;
+}
+#rbtn.on { opacity: 1; pointer-events: auto; }
+#rbtn:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+
+<h1>Tasks &amp; People on a Shared Scale</h1>
+<p class="sub">Item Response Theory — Difficulty &amp; Ability</p>
+<div id="stage"><canvas id="c"></canvas></div>
+<div class="foot">
+  <div id="lbl">&nbsp;</div>
+  <button id="rbtn" onclick="replay()">&#8635; Replay</button>
+</div>
+
+<script>
+var canvas = document.getElementById('c');
+var ctx    = canvas.getContext('2d');
+var stage  = document.getElementById('stage');
+var lbl    = document.getElementById('lbl');
+var rbtn   = document.getElementById('rbtn');
+
+var W, H, CX, CY;
+var PILL_H, PILL_W, GAP;
+
+function resize() {
+  var r = stage.getBoundingClientRect();
+  W = canvas.width  = r.width;
+  H = canvas.height = r.height;
+  CX = W / 2; CY = H / 2;
+  var usable = H * 0.88;
+  GAP    = Math.max(1, Math.floor(usable / 30 * 0.18));
+  PILL_H = Math.floor((usable - GAP * 29) / 30);
+  PILL_W = Math.min(72, Math.floor(W * 0.18));
+}
+
+function easeInOut(t) { return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2; }
+function easeOut(t)   { return 1 - Math.pow(1-t, 3); }
+function lerp(a,b,t)  { return a + (b-a)*t; }
+function clamp(v,lo,hi){ return v<lo?lo:v>hi?hi:v; }
+
+function taskColor(t) {
+  var r = Math.round(255 + (4  -255)*t);
+  var g = Math.round(255 + (64 -255)*t);
+  var b = Math.round(255 + (20 -255)*t);
+  return 'rgb('+r+','+g+','+b+')';
+}
+function brightness(rgb) {
+  var m = rgb.match(/rgb\((\d+),(\d+),(\d+)\)/);
+  if (!m) return 128;
+  return parseInt(m[1])*0.299 + parseInt(m[2])*0.587 + parseInt(m[3])*0.114;
+}
+
+// ── Data ───────────────────────────────────────────────────────────────────────
+var N = 30;
+var THETA_MIN = -2.0, THETA_MAX = 3.0;
+
+var tasks = [];
+for (var i = 0; i < N; i++) {
+  tasks.push({
+    rank:  i+1,
+    label: 'T' + (i+1 < 10 ? '0'+(i+1) : ''+(i+1)),
+    theta: parseFloat((-2.0 + i*(5.0/29)).toFixed(2)),
+    t:     i/(N-1)
+  });
+}
+
+var people = [
+  { name:'Alex',   theta:-1.6, r:232, g:196, b:106 },
+  { name:'Jordan', theta:-0.7, r:232, g:160, b:106 },
+  { name:'Morgan', theta: 0.2, r:106, g:180, b:232 },
+  { name:'Casey',  theta: 0.9, r:176, g:106, b:232 },
+  { name:'Riley',  theta: 1.8, r:232, g:106, b:154 },
+  { name:'Taylor', theta: 2.6, r:106, g:232, b:196 }
+];
+for (var pi = 0; pi < people.length; pi++) {
+  people[pi].color = 'rgb('+people[pi].r+','+people[pi].g+','+people[pi].b+')';
+}
+
+// ── Layout ─────────────────────────────────────────────────────────────────────
+function taskColX(shift) {
+  var settled = CX + W*0.10;
+  var shifted  = CX - W*0.20;
+  return lerp(settled, shifted, shift);
+}
+function listTargets(colX) {
+  var totalH = N*(PILL_H+GAP)-GAP;
+  var startY = CY - totalH/2;
+  var arr = [];
+  for (var i = 0; i < N; i++) {
+    arr.push({ x:colX, y:startY + i*(PILL_H+GAP) + PILL_H/2 });
+  }
+  return arr;
+}
+function thetaToY(theta) {
+  var totalH = N*(PILL_H+GAP)-GAP;
+  var topY   = CY - totalH/2 + PILL_H/2;
+  var botY   = CY + totalH/2 - PILL_H/2;
+  var t = (theta-THETA_MIN)/(THETA_MAX-THETA_MIN);
+  return lerp(botY, topY, clamp(t,0,1));
+}
+function axisX(colX)  { return colX + PILL_W/2 + 44; }
+function personX(ax)  { return ax + 60; }
+
+// ── Particles ──────────────────────────────────────────────────────────────────
+var particles = [];
+function shuffleArr(arr) {
+  var a = arr.slice();
+  for (var i = a.length-1; i > 0; i--) {
+    var j = Math.floor(Math.random()*(i+1));
+    var tmp=a[i]; a[i]=a[j]; a[j]=tmp;
+  }
+  return a;
+}
+function initParticles() {
+  var shuffled = shuffleArr(tasks);
+  particles = [];
+  for (var i = 0; i < shuffled.length; i++) {
+    var task = shuffled[i];
+    var m = PILL_W/2+10;
+    var maxX = CX - 20;
+    var x = m + Math.random()*(maxX - m*2);
+    var y = H*0.08 + Math.random()*H*0.84;
+    particles.push({
+      task:task, x:x, y:y,
+      vx:(Math.random()-0.5)*0.4, vy:(Math.random()-0.5)*0.4,
+      phase:'scatter',
+      seekDelay:0, seekStart:0,
+      startX:x, startY:y, tx:x, ty:y
+    });
+  }
+}
+
+// ── Markers ────────────────────────────────────────────────────────────────────
+var markers = [];
+function initMarkers() {
+  markers = [];
+  for (var i = 0; i < people.length; i++) {
+    markers.push({
+      person:people[i], phase:'hidden',
+      cx:0, cy:0, finalY:0, startY:0,
+      flyDelay:0, climbStart:0, climbDur:0,
+      alpha:0, xAlpha:0, xBell:undefined
+    });
+  }
+}
+
+// ── Draw helpers ───────────────────────────────────────────────────────────────
+function pillPath(x,y,w,h) {
+  var r=h/2;
+  ctx.beginPath();
+  ctx.moveTo(x-w/2+r,y-h/2); ctx.lineTo(x+w/2-r,y-h/2);
+  ctx.arcTo(x+w/2,y-h/2,x+w/2,y+h/2,r);
+  ctx.lineTo(x+w/2-r,y+h/2);
+  ctx.arcTo(x-w/2,y+h/2,x-w/2,y-h/2,r);
+  ctx.closePath();
+}
+
+function drawPill(x,y,w,h,fill,alpha,label,thetaVal,showTheta) {
+  ctx.save();
+  ctx.globalAlpha=alpha;
+  ctx.shadowColor='rgba(0,0,0,0.4)'; ctx.shadowBlur=4; ctx.shadowOffsetY=2;
+  pillPath(x,y,w,h);
+  ctx.fillStyle=fill; ctx.fill();
+  ctx.shadowColor='transparent'; ctx.shadowBlur=0;
+  var br=brightness(fill);
+  ctx.fillStyle=br>100?'rgba(4,64,20,0.65)':'rgba(255,255,255,0.75)';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  var fs=Math.max(8,Math.floor(PILL_H*0.58));
+  ctx.font=fs+'px "IBM Plex Mono"';
+  if(showTheta){
+    ctx.fillText(label,x-17,y);
+    ctx.globalAlpha=alpha*0.5;
+    ctx.font=Math.max(6,fs-1)+'px "IBM Plex Mono"';
+    ctx.fillText('th '+thetaVal.toFixed(2),x+17,y);
+  } else {
+    ctx.fillText(label,x,y);
+  }
+  ctx.restore();
+}
+
+// Draw pill with a color overlay (red=needs help, green=mastered)
+function drawPillTinted(x,y,w,h,baseFill,alpha,label,thetaVal,overlayColor,overlayAlpha) {
+  drawPill(x,y,w,h,baseFill,alpha,label,thetaVal,true);
+  if(overlayAlpha>0.01){
+    ctx.save();
+    ctx.globalAlpha=overlayAlpha;
+    pillPath(x,y,w,h);
+    ctx.fillStyle=overlayColor; ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawSlot(x,y,w,h,color) {
+  ctx.save(); ctx.globalAlpha=0.09;
+  ctx.strokeStyle=color; ctx.lineWidth=1;
+  pillPath(x,y,w,h); ctx.stroke();
+  ctx.restore();
+}
+
+function drawAxis(ax,topY,botY,alpha,growProg) {
+  var endY=lerp(topY,botY,growProg);
+  ctx.save(); ctx.globalAlpha=alpha;
+  var grad=ctx.createLinearGradient(0,topY,0,endY);
+  grad.addColorStop(0,'rgba(195,223,199,0.6)');
+  grad.addColorStop(1,'rgba(4,64,20,0.6)');
+  ctx.strokeStyle=grad; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(ax,topY); ctx.lineTo(ax,endY); ctx.stroke();
+  if(growProg>0.95){
+    var ticks=[-2,-1,0,1,2,3];
+    for(var i=0;i<ticks.length;i++){
+      var v=ticks[i];
+      if(v<THETA_MIN||v>THETA_MAX) continue;
+      var ty=thetaToY(v);
+      ctx.globalAlpha=alpha*0.4; ctx.strokeStyle='#6abf7a'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(ax-5,ty); ctx.lineTo(ax+5,ty); ctx.stroke();
+      ctx.globalAlpha=alpha*0.7; ctx.fillStyle='#9adba6';
+      ctx.font='bold 10px "IBM Plex Mono"'; ctx.textAlign='right'; ctx.textBaseline='middle';
+      ctx.fillText(v===0?'0':(v>0?'+'+v:''+v),ax-9,ty);
+    }
+    ctx.globalAlpha=alpha*0.8; ctx.fillStyle='#9adba6';
+    ctx.font='bold 11px "IBM Plex Mono"'; ctx.textAlign='center';
+    ctx.fillText('Hard',ax,topY-12);
+    ctx.fillText('Easy',ax,botY+14);
+  }
+  ctx.restore();
+}
+
+function drawPersonDot(x,y,alpha,person,showX,xAlpha) {
+  ctx.save();
+  ctx.globalAlpha=alpha;
+  ctx.shadowColor=person.color; ctx.shadowBlur=12;
+  ctx.beginPath();
+  ctx.moveTo(x,y-7); ctx.lineTo(x+6,y); ctx.lineTo(x,y+7); ctx.lineTo(x-6,y);
+  ctx.closePath();
+  ctx.fillStyle=person.color; ctx.fill();
+  ctx.shadowBlur=0; ctx.restore();
+  // X fades in then back out — xAlpha is a 0→1→0 bell driven externally
+  if(showX&&xAlpha>0){
+    ctx.save();
+    ctx.globalAlpha=alpha*xAlpha;
+    ctx.strokeStyle='#ff4444'; ctx.lineWidth=2.5; ctx.lineCap='round';
+    ctx.shadowColor='#ff2222'; ctx.shadowBlur=8;
+    var s=8;
+    ctx.beginPath(); ctx.moveTo(x-s,y-s); ctx.lineTo(x+s,y+s); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x+s,y-s); ctx.lineTo(x-s,y+s); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawPersonLabel(x,y,alpha,person,showTheta) {
+  ctx.save();
+  ctx.globalAlpha=alpha;
+  ctx.font='bold 11px "IBM Plex Mono"';
+  ctx.textAlign='left'; ctx.textBaseline='middle';
+  ctx.fillStyle=person.color;
+  ctx.shadowColor='transparent'; ctx.shadowBlur=0;
+  ctx.fillText(person.name,x,y);
+  if(showTheta){
+    ctx.globalAlpha=alpha*0.65;
+    ctx.font='9px "IBM Plex Mono"';
+    var ts=person.theta>0?'+'+person.theta.toFixed(1):person.theta.toFixed(1);
+    ctx.fillText('th='+ts,x,y+13);
+  }
+  ctx.restore();
+}
+
+function drawPassedTrail(px,py,botY,alpha,person) {
+  ctx.save();
+  ctx.globalAlpha=alpha*0.25;
+  ctx.strokeStyle=person.color; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(px,botY+4); ctx.lineTo(px,py+7); ctx.stroke();
+  ctx.restore();
+}
+
+// ── Spotlight draw: one person's zone highlighted ──────────────────────────────
+function drawSpotlight(tgts, personY, person, zoneAlpha, dimOthers, activeMkIdx, now) {
+  var ax   = axisX(taskColX(1));
+  var pX   = personX(ax);
+  var topY = tgts[0].y;
+  var botY = tgts[N-1].y;
+  var pillLeft = tgts[0].x - PILL_W/2;
+
+  // ── Radial spotlight beam from top-right corner ──
+  if(dimOthers>0){
+    // First darken everything
+    ctx.save();
+    ctx.globalAlpha=dimOthers*0.55;
+    ctx.fillStyle='#060d07';
+    ctx.fillRect(0,0,W,H);
+    ctx.restore();
+
+    // Cone of light centred on person's Y, emanating from right edge
+    var coneX  = W + 20;           // source off-screen right
+    var coneY  = personY;
+    var spread = (botY - topY) * 0.38 * dimOthers; // cone half-width at pill column
+    var dist   = coneX - pillLeft;
+    var angle  = Math.atan2(spread, dist);
+
+    ctx.save();
+    ctx.globalAlpha = dimOthers * 0.52;
+    var coneGrad = ctx.createRadialGradient(coneX,coneY,0,coneX,coneY,dist*1.1);
+    coneGrad.addColorStop(0, 'rgba(255,255,220,0.9)');
+    coneGrad.addColorStop(0.5, 'rgba(255,255,180,0.3)');
+    coneGrad.addColorStop(1, 'rgba(255,255,180,0)');
+
+    ctx.beginPath();
+    ctx.moveTo(coneX, coneY);
+    ctx.lineTo(pillLeft - 20, coneY - spread * 1.4);
+    ctx.lineTo(0, coneY - spread * 2.2);
+    ctx.lineTo(0, coneY + spread * 2.2);
+    ctx.lineTo(pillLeft - 20, coneY + spread * 1.4);
+    ctx.closePath();
+    ctx.fillStyle = coneGrad;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // ── Softly tinted pills — gentler overlay ──
+  for(var i=0;i<particles.length;i++){
+    var pp=particles[i];
+    var tgt=tgts[pp.task.rank-1];
+    var isAbove = tgt.y < personY;
+    var isBelow = tgt.y > personY;
+    // Softer tint values: max 0.35 above, 0.28 below
+    var oa = isAbove ? zoneAlpha*0.35 : (isBelow ? zoneAlpha*0.28 : 0);
+    var oc = isAbove ? 'rgba(220,60,60,0.9)' : 'rgba(80,200,100,0.8)';
+    drawPillTinted(tgt.x,tgt.y,PILL_W,PILL_H,taskColor(pp.task.t),1,pp.task.label,pp.task.theta,oc,oa);
+  }
+
+  // ── Dashed divider — stops before the name ──
+  ctx.save();
+  ctx.globalAlpha=zoneAlpha*0.5;
+  ctx.strokeStyle=person.color; ctx.lineWidth=1.5;
+  ctx.setLineDash([4,5]);
+  ctx.beginPath();
+  ctx.moveTo(pillLeft-4, personY);
+  ctx.lineTo(pX+10, personY);   // stops just before name (name starts at pX+46)
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // ── Zone labels + full-zone arrows ──
+  var labelX = pillLeft - 14;  // just left of the pill column
+
+  // "Needs Help" — above zone
+  if(topY < personY - PILL_H){
+    var arrowX   = labelX - 16;
+    var zoneH    = personY - topY;          // full height of red zone
+    var midArrow = topY + zoneH * 0.5;     // vertical midpoint for label
+    ctx.save();
+    ctx.globalAlpha = zoneAlpha * 0.95;
+
+    // Arrow: full zone height, with a small gap at each end
+    ctx.strokeStyle = 'rgba(230,80,80,0.9)';
+    ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(arrowX, personY - 6);
+    ctx.lineTo(arrowX, topY + 6);
+    ctx.stroke();
+    // Arrowhead pointing up
+    ctx.beginPath();
+    ctx.moveTo(arrowX-5, topY+14);
+    ctx.lineTo(arrowX,   topY+5);
+    ctx.lineTo(arrowX+5, topY+14);
+    ctx.stroke();
+
+    // Label to the LEFT of the arrow line, vertically centred on the zone
+    ctx.fillStyle    = 'rgba(240,90,90,1)';
+    ctx.font         = 'bold 13px "IBM Plex Mono"';
+    ctx.textAlign    = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor  = 'rgba(240,80,80,0.4)';
+    ctx.shadowBlur   = 6;
+    ctx.fillText('Needs Help', arrowX - 10, midArrow);
+    ctx.restore();
+  }
+
+  // "Mastered" — below zone
+  if(botY > personY + PILL_H){
+    var arrowX   = labelX - 16;
+    var zoneH    = botY - personY;
+    var midArrow = personY + zoneH * 0.5;
+    ctx.save();
+    ctx.globalAlpha = zoneAlpha * 0.95;
+
+    // Arrow: full zone height
+    ctx.strokeStyle = 'rgba(80,220,110,0.9)';
+    ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(arrowX, personY + 6);
+    ctx.lineTo(arrowX, botY - 6);
+    ctx.stroke();
+    // Arrowhead pointing down
+    ctx.beginPath();
+    ctx.moveTo(arrowX-5, botY-14);
+    ctx.lineTo(arrowX,   botY-5);
+    ctx.lineTo(arrowX+5, botY-14);
+    ctx.stroke();
+
+    // Label to the LEFT of the arrow line, vertically centred on the zone
+    ctx.fillStyle    = 'rgba(80,230,110,1)';
+    ctx.font         = 'bold 13px "IBM Plex Mono"';
+    ctx.textAlign    = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor  = 'rgba(80,220,100,0.4)';
+    ctx.shadowBlur   = 6;
+    ctx.fillText('Mastered', arrowX - 10, midArrow);
+    ctx.restore();
+  }
+
+  // ── Person callout — name safely right of dashed line end ──
+  var nameX = pX + 46;
+  ctx.save();
+  ctx.globalAlpha = zoneAlpha;
+  ctx.font        = 'bold 16px "IBM Plex Mono"';
+  ctx.textAlign   = 'left';
+  ctx.textBaseline= 'middle';
+  ctx.fillStyle   = person.color;
+  ctx.shadowBlur  = 0;
+  ctx.fillText(person.name, Math.round(nameX), Math.round(personY));
+  ctx.globalAlpha = zoneAlpha * 0.65;
+  ctx.font        = '11px "IBM Plex Mono"';
+  var ts = person.theta>0?'+'+person.theta.toFixed(1):person.theta.toFixed(1);
+  ctx.fillText('theta = '+ts, Math.round(nameX), Math.round(personY)+18);
+  ctx.restore();
+}
+
+// ── Animation state ────────────────────────────────────────────────────────────
+var phase     = 'idle';
+var startTime = 0;
+var phStart   = 0;
+var rafId     = null;
+
+// One-by-one person state
+var personIdx    = 0;    // which person we are currently processing
+var personPhase  = '';   // 'climbing' | 'spotlight' | 'fadeout'
+var personStart  = 0;
+
+var SCATTER_DUR   = 3500;
+var SEEK_DUR      = 2200;
+var STAGGER_MS    = 110;
+var SHIFT_DUR     = 900;
+
+var CLIMB_PAUSE   = 600;   // ms pause before climbing starts for each person
+var CLIMB_SPEED   = 5.0;   // px/ms multiplier for climb duration (slower = bigger)
+var SPOT_FADE_IN  = 2200;  // ms for spotlight to fade in (slow reveal)
+var SPOT_DWELL    = 3000;  // ms to hold spotlight
+var SPOT_FADE_OUT = 900;   // ms to fade out
+var SPOT_TOTAL    = SPOT_FADE_IN + SPOT_DWELL + SPOT_FADE_OUT;
+
+function setLbl(t) { lbl.textContent = t; }
+
+// ── Draw all previously settled people (dimmed to 25% when someone active) ──
+function drawSettledPeople(tgts, botY, activeMkIdx, dimAmt) {
+  var ax = axisX(taskColX(1));
+  var pX = personX(ax);
+  for(var i=0; i<markers.length; i++){
+    var mk=markers[i];
+    if(mk.phase!=='stopped') continue;
+    var isActive=(i===activeMkIdx);
+    var a = isActive ? 1 : lerp(1, 0.25, dimAmt);
+    drawPassedTrail(mk.cx,mk.cy,botY,a,mk.person);
+    drawPersonDot(mk.cx,mk.cy,a,mk.person,false,0);
+    // Don't draw small label for active person — spotlight draws the big version
+    if(!isActive || dimAmt < 0.05){
+      drawPersonLabel(mk.cx+14,mk.cy,a,mk.person,a>0.4);
+    }
+  }
+}
+
+// ── Tick ───────────────────────────────────────────────────────────────────────
+function tick(now) {
+  rafId = requestAnimationFrame(tick);
+  var elapsed = now - startTime;
+  ctx.clearRect(0,0,W,H);
+
+  // ── SCATTER ─────────────────────────────────────────────────────────────────
+  if(phase==='scatter'){
+    if(elapsed < SCATTER_DUR){
+      for(var i=0;i<particles.length;i++){
+        var p=particles[i];
+        p.x+=p.vx; p.y+=p.vy;
+        p.vx+=(Math.random()-0.5)*0.06; p.vy+=(Math.random()-0.5)*0.06;
+        p.vx*=0.98; p.vy*=0.98;
+        var m=PILL_W/2+4;
+        if(p.x<m)       {p.x=m;       p.vx= Math.abs(p.vx);}
+        if(p.x>CX-10)   {p.x=CX-10;   p.vx=-Math.abs(p.vx);}
+        if(p.y<PILL_H)  {p.y=PILL_H;  p.vy= Math.abs(p.vy);}
+        if(p.y>H-PILL_H){p.y=H-PILL_H;p.vy=-Math.abs(p.vy);}
+        drawPill(p.x,p.y,PILL_W,PILL_H,taskColor(p.task.t),0.88,p.task.label,p.task.theta,false);
+      }
+    } else {
+      phase='sorting'; phStart=now;
+      setLbl('IRT Ordering by Difficulty…');
+      var tgts2=listTargets(taskColX(0));
+      for(var i=0;i<particles.length;i++){
+        var p=particles[i];
+        p.seekDelay=p.task.rank*STAGGER_MS;
+        p.seekStart=0; p.phase='waiting';
+        p.startX=p.x; p.startY=p.y;
+        p.tx=tgts2[p.task.rank-1].x; p.ty=tgts2[p.task.rank-1].y;
+      }
+    }
+  }
+
+  // ── SORTING ─────────────────────────────────────────────────────────────────
+  if(phase==='sorting'){
+    var se=now-phStart;
+    var colX=taskColX(0);
+    var tgts=listTargets(colX);
+    var ax=axisX(colX);
+    var topY=tgts[0].y, botY=tgts[N-1].y;
+    var done=true;
+    for(var i=0;i<tgts.length;i++) drawSlot(tgts[i].x,tgts[i].y,PILL_W+14,PILL_H+2,taskColor(i/(N-1)));
+    var axA=clamp(se/800,0,1)*0.2;
+    ctx.save(); ctx.globalAlpha=axA; ctx.strokeStyle='#6abf7a'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(ax,topY); ctx.lineTo(ax,botY); ctx.stroke(); ctx.restore();
+    for(var i=0;i<particles.length;i++){
+      var p=particles[i];
+      if(p.phase==='waiting'){
+        if(se>=p.seekDelay){p.phase='seeking';p.seekStart=now;}
+        p.x+=p.vx*0.3; p.y+=p.vy*0.3;
+        drawPill(p.x,p.y,PILL_W,PILL_H,taskColor(p.task.t),0.75,p.task.label,p.task.theta,false);
+        done=false;
+      } else if(p.phase==='seeking'){
+        var pr=clamp((now-p.seekStart)/SEEK_DUR,0,1);
+        var e=easeInOut(pr);
+        p.x=p.startX+(p.tx-p.startX)*e;
+        p.y=p.startY+(p.ty-p.startY)*e;
+        drawPill(p.x,p.y,PILL_W,PILL_H,taskColor(p.task.t),0.75+e*0.25,p.task.label,p.task.theta,false);
+        if(pr>=1){p.x=p.tx;p.y=p.ty;p.phase='settled';} else done=false;
+      } else {
+        drawPill(p.x,p.y,PILL_W,PILL_H,taskColor(p.task.t),1,p.task.label,p.task.theta,false);
+      }
+    }
+    if(done){phase='shifting';phStart=now;setLbl('Placing on a Shared Scale…');}
+  }
+
+  // ── SHIFTING ────────────────────────────────────────────────────────────────
+  if(phase==='shifting'){
+    var pr=clamp((now-phStart)/SHIFT_DUR,0,1);
+    var ep=easeOut(pr);
+    var colX=taskColX(ep);
+    var tgts=listTargets(colX);
+    var ax=axisX(colX);
+    var topY=tgts[0].y, botY=tgts[N-1].y;
+    for(var i=0;i<particles.length;i++){
+      var p=particles[i];
+      var tgt=tgts[p.task.rank-1];
+      p.x=tgt.x; p.y=tgt.y;
+      drawPill(p.x,p.y,PILL_W,PILL_H,taskColor(p.task.t),1,p.task.label,p.task.theta,false);
+    }
+    drawAxis(ax,topY,botY,ep,pr);
+    if(pr>=1){
+      // Kick off first person
+      phase='onebyone';
+      phStart=now;
+      personIdx=0;
+      personPhase='';
+      launchNextPerson(now);
+    }
+  }
+
+  // ── ONE BY ONE ──────────────────────────────────────────────────────────────
+  if(phase==='onebyone'){
+    var colX=taskColX(1);
+    var tgts=listTargets(colX);
+    var ax=axisX(colX);
+    var pX=personX(ax);
+    var topY=tgts[0].y, botY=tgts[N-1].y;
+
+    // Always draw task pills
+    for(var i=0;i<particles.length;i++){
+      var p=particles[i];
+      var tgt=tgts[p.task.rank-1];
+      drawPill(tgt.x,tgt.y,PILL_W,PILL_H,taskColor(p.task.t),1,p.task.label,p.task.theta,true);
+    }
+    drawAxis(ax,topY,botY,1,1);
+
+    var mk=markers[personIdx];
+    var pe=now-personStart;
+
+    if(personPhase==='climbing'){
+      var pr=clamp(pe/mk.climbDur,0,1);
+      var e=easeOut(pr);
+      mk.cy=lerp(mk.startY,mk.finalY,e);
+      mk.cx=pX;
+      mk.alpha=clamp(pr*3,0,1);
+
+      // Green glow on passed pills
+      for(var j=0;j<particles.length;j++){
+        var pp=particles[j];
+        var tgt=tgts[pp.task.rank-1];
+        if(tgt.y>mk.cy&&tgt.y<=botY+4){
+          ctx.save();
+          ctx.globalAlpha=0.15*mk.alpha;
+          ctx.shadowColor=mk.person.color; ctx.shadowBlur=8;
+          pillPath(tgt.x,tgt.y,PILL_W+2,PILL_H+2);
+          ctx.fillStyle=mk.person.color; ctx.fill();
+          ctx.shadowBlur=0; ctx.restore();
+        }
+      }
+
+      // Draw previously settled people at full alpha (no spotlight yet)
+      drawSettledPeople(tgts, botY, -1, 0);
+
+      drawPassedTrail(mk.cx,mk.cy,botY,mk.alpha,mk.person);
+      drawPersonDot(mk.cx,mk.cy,mk.alpha,mk.person,false,0);
+
+      if(pr>=1){
+        mk.cy=mk.finalY; mk.phase='stopped';
+        // Start X bell
+        mk.xBell=0; mk.xAlpha=0;
+        personPhase='spotlight';
+        personStart=now;
+        setLbl(mk.person.name+' — Skill Profile');
+      }
+    }
+
+    if(personPhase==='spotlight'){
+      var zoneAlpha, dimAmt;
+      if(pe < SPOT_FADE_IN){
+        zoneAlpha = easeInOut(pe/SPOT_FADE_IN);
+        dimAmt    = zoneAlpha;
+      } else if(pe < SPOT_FADE_IN+SPOT_DWELL){
+        zoneAlpha=1; dimAmt=1;
+      } else {
+        var fo=clamp((pe-SPOT_FADE_IN-SPOT_DWELL)/SPOT_FADE_OUT,0,1);
+        zoneAlpha=1-easeInOut(fo);
+        dimAmt=zoneAlpha;
+      }
+
+      // X bell on the dot (fades in/out over first ~2s of spotlight)
+      mk.xBell++;
+      if(mk.xBell<50)       mk.xAlpha=clamp(mk.xBell/50,0,1);
+      else if(mk.xBell<100) mk.xAlpha=1;
+      else                  mk.xAlpha=clamp(1-(mk.xBell-100)/50,0,1);
+
+      // Settled people dimmed
+      drawSettledPeople(tgts, botY, personIdx, dimAmt);
+
+      // Spotlight (dims canvas, tints pills, draws cone + labels)
+      drawSpotlight(tgts, mk.finalY, mk.person, zoneAlpha, dimAmt, personIdx, now);
+
+      // Active person dot on top
+      drawPassedTrail(mk.cx,mk.cy,botY,1,mk.person);
+      drawPersonDot(mk.cx,mk.cy,1,mk.person,true,mk.xAlpha);
+
+      if(pe>=SPOT_TOTAL){
+        personPhase='next';
+      }
+    }
+
+    if(personPhase==='next'){
+      // Draw current settled at full before moving on
+      drawSettledPeople(tgts, botY, -1, 0);
+      personIdx++;
+      if(personIdx>=markers.length){
+        phase='done';
+        setLbl('Tasks & People — One Scale');
+        setTimeout(function(){rbtn.classList.add('on');},600);
+      } else {
+        launchNextPerson(now);
+      }
+    }
+  }
+
+  // ── DONE ────────────────────────────────────────────────────────────────────
+  if(phase==='done'){
+    var colX=taskColX(1);
+    var tgts=listTargets(colX);
+    var ax=axisX(colX);
+    var botY=tgts[N-1].y;
+    for(var i=0;i<particles.length;i++){
+      var p=particles[i];
+      var tgt=tgts[p.task.rank-1];
+      drawPill(tgt.x,tgt.y,PILL_W,PILL_H,taskColor(p.task.t),1,p.task.label,p.task.theta,true);
+    }
+    drawAxis(ax,tgts[0].y,botY,1,1);
+    for(var i=0;i<markers.length;i++){
+      var mk=markers[i];
+      if(mk.phase!=='stopped') continue;
+      drawPassedTrail(mk.cx,mk.cy,botY,1,mk.person);
+      drawPersonDot(mk.cx,mk.cy,1,mk.person,false,0);
+      drawPersonLabel(mk.cx+14,mk.cy,1,mk.person,true);
+    }
+  }
+}
+
+// ── Launch next person's climb ─────────────────────────────────────────────────
+function launchNextPerson(now) {
+  var finalAx=axisX(taskColX(1));
+  var pX=personX(finalAx);
+  var finalTgts=listTargets(taskColX(1));
+  var listBotY=finalTgts[N-1].y;
+  var mk=markers[personIdx];
+  var py=thetaToY(mk.person.theta);
+  var dist=listBotY-py;
+  mk.finalY   = py;
+  mk.startY   = listBotY + 30;
+  mk.cx       = pX;
+  mk.cy       = mk.startY;
+  mk.phase    = 'climbing';
+  mk.climbDur = Math.max(1200, dist * CLIMB_SPEED);
+  mk.alpha    = 0;
+  mk.xAlpha   = 0;
+  mk.xBell    = undefined;
+  personPhase = 'climbing';
+  personStart = now + CLIMB_PAUSE;
+  setLbl(mk.person.name+' climbing…');
+}
+
+// ── Start ──────────────────────────────────────────────────────────────────────
+function start() {
+  rbtn.classList.remove('on');
+  resize();
+  initParticles();
+  initMarkers();
+  phase='scatter';
+  startTime=performance.now();
+  phStart=startTime;
+  cycleIdx=0;
+  setLbl('Unordered Tasks');
+  if(rafId) cancelAnimationFrame(rafId);
+  rafId=requestAnimationFrame(tick);
+}
+function replay() { start(); }
+window.addEventListener('resize', function(){ resize(); });
+window.addEventListener('load', function(){ setTimeout(start,500); });
+</script>
+</body>
+</html>
